@@ -1,22 +1,44 @@
-# First stage sets up the base, ie everything except the active dev repo
-FROM osrf/ros:foxy-desktop-focal AS base
+FROM carlasim/carla:0.9.15 as carla
 
-SHELL ["/bin/bash", "-c"]
+FROM ros:humble-ros-base-jammy
 
-RUN apt update && apt install -y python3-pip
+ENV CARLA_VERSION=0.9.15
+ENV ROS_DISTRO=humble
+ENV CARLA_VERSION=$CARLA_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_PYTHON_VERSION=3
+ENV ROS_VERSION=2
 
-RUN sudo apt install python3-colcon-common-extensions
-
-RUN mkdir -p ~/carla-ros-bridge
-WORKDIR /root/carla-ros-bridge
+WORKDIR /opt/carla-ros-bridge
 
 # TODO: Check versions, should support up to CARLA 0.9.13
-RUN git clone --recurse-submodules https://github.com/carla-simulator/ros-bridge.git src/ros-bridge
+RUN git clone --recurse-submodules --branch feature/u22-0.9.15 https://github.com/pradhanshrijal/ros-bridge.git src/
 
-RUN rosdep update && rosdep install --from-paths src --ignore-src -r
+COPY --from=carla /home/carla/PythonAPI /opt/carla/PythonAPI
 
-RUN source /opt/ros/foxy/setup.bash && \
-    colcon build
+RUN cp ./src/requirements.txt /opt/carla-ros-bridge
+RUN cp ./src/install_dependencies.sh /opt/carla-ros-bridge
+
+RUN apt update && apt install -y \
+    ros-$ROS_DISTRO-rviz2 \
+    ros-$ROS_DISTRO-derived-object-msgs \
+    ros-$ROS_DISTRO-ackermann-msgs \
+    python3-pip
+
+RUN pip3 install --upgrade pip
+
+RUN rosdep update 
+RUN rosdep install --from-paths src --ignore-src -r -y
+
+RUN /bin/bash -c 'source /opt/ros/$ROS_DISTRO/setup.bash; \
+    bash /opt/carla-ros-bridge/install_dependencies.sh; \
+    echo "export PYTHONPATH=\$PYTHONPATH:/opt/carla/PythonAPI/carla/dist/$(ls /opt/carla/PythonAPI/carla/dist | grep py$ROS_PYTHON_VERSION.)" >> /opt/carla/setup.bash; \
+    echo "export PYTHONPATH=\$PYTHONPATH:/opt/carla/PythonAPI/carla" >> /opt/carla/setup.bash'
+
+RUN /bin/bash -c 'source /opt/ros/$ROS_DISTRO/setup.bash; \
+    colcon build'
+
+RUN pip3 install carla==$CARLA_VERSION
 
 COPY ros_entrypoint.sh /
 
@@ -24,7 +46,3 @@ COPY ros_entrypoint.sh /
 RUN ["sudo", "chmod", "+x", "/ros_entrypoint.sh"]
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
-
-RUN python3 -m pip install --upgrade pip && python3 -m pip install numpy pygame
-RUN python3 -m pip install 'carla==0.9.13'
-

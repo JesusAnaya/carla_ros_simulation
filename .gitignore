@@ -1,6 +1,8 @@
 build
 install
 log
+.idea
+.DS_Store
 
 docker/ros2_container/ros2_ws/log
 docker/ros2_container/ros2_ws/build
