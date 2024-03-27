@@ -13,41 +13,32 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-
-  # foxglove to visualize live data
-  foxglove_bridge:
-    build:
-      context: ./docker/foxglove_bridge/
-      dockerfile: Dockerfile
-    image: foxglove-bridge:latest
-    container_name: foxglove_bridge
-    command: ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
-    depends_on:
-      bridge:
-        condition: service_started
-    ports:
-      - 8765:8765
+    healthcheck:
+      test: ["CMD", "sleep", "5"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
 
   # Carla ROS bridge container
-  bridge:
+  carla_ros_bridge:
     build:
       context: ./docker/ros_carla_bridge/
       dockerfile: Dockerfile
     container_name: carla_ros_bridge
     image: carla_ros_bridge:latest
-    command: /bin/bash -c "sleep 5 && ros2 launch carla_ros_bridge carla_ros_bridge.launch.py host:=carla_server"
+    command: ros2 launch carla_ros_bridge carla_ros_bridge.launch.py host:=carla_server timeout:=30
     depends_on:
       carla_server:
-        condition: service_started
+        condition: service_healthy
 
   bridge_spawn_objects:
     image: carla_ros_bridge:latest
     container_name: bridge_spawn_objects
-    command: /bin/bash -c "sleep 6 && ros2 launch carla_spawn_objects carla_spawn_objects.launch.py host:=carla_server objects_definition_file:=/config/objects.json"
+    command: ros2 launch carla_spawn_objects carla_spawn_objects.launch.py host:=carla_server objects_definition_file:=/config/objects.json
     volumes:
       - ./config:/config
     depends_on:
-      bridge:
+      carla_ros_bridge:
         condition: service_started
 
   control_steering_wheel:
@@ -65,7 +56,22 @@ services:
       - QT_X11_NO_MITSHM=1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-    command: /bin/bash -c "sleep 6 && ros2 launch control_steering_wheel control_steering_wheel.launch.py host:=carla_server timeout:=60"
+      - ./config:/config
+    command: ros2 launch control_steering_wheel control_steering_wheel.launch.py host:=carla_server
     depends_on:
-      bridge:
+      carla_ros_bridge:
         condition: service_started
+
+  # foxglove to visualize live data
+  foxglove_bridge:
+    build:
+      context: ./docker/foxglove_bridge/
+      dockerfile: Dockerfile
+    image: foxglove-bridge:latest
+    container_name: foxglove_bridge
+    command: ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+    depends_on:
+      carla_ros_bridge:
+        condition: service_started
+    ports:
+      - 8765:8765

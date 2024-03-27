@@ -75,6 +75,10 @@ from sensor_msgs.msg import Image
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Bool
 
+from PIL import Image as PILImage
+from configparser import ConfigParser
+
+RESOLUTION = (1280, 720)
 # ==============================================================================
 # -- World ---------------------------------------------------------------------
 # ==============================================================================
@@ -90,10 +94,10 @@ class ControlSteeringWheel(CompatibleNode):
         self._surface = None
         self.role_name = self.get_param("role_name", "ego_vehicle")
         self.hud = HUD(self.role_name, resolution['width'], resolution['height'], self)
-        self.controller = KeyboardControl(self.role_name, self.hud, self)
+        self.controller = DualControl(self.role_name, self.hud, self)
 
         self.image_subscriber = self.new_subscription(
-            Image, "/carla/{}/rgb_view/image".format(self.role_name),
+            Image, "/carla/{}/rgb_center/image".format(self.role_name),
             self.on_view_image, qos_profile=10)
 
         self.collision_subscriber = self.new_subscription(
@@ -135,9 +139,17 @@ class ControlSteeringWheel(CompatibleNode):
         """
         array = numpy.frombuffer(image.data, dtype=numpy.dtype("uint8"))
         array = numpy.reshape(array, (image.height, image.width, 4))
-        array = array[:, :, :3]
-        array = array[:, :, ::-1]
-        self._surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+        array = array[:, :, :3][:, :, ::-1]
+
+        # Convert PIL Image directly to a surface without going back to a NumPy array.
+        # This reduces one conversion step, improving performance.
+        pil_img = PILImage.fromarray(array).resize(RESOLUTION, PILImage.LANCZOS)
+        mode = pil_img.mode
+        size = pil_img.size
+        data = pil_img.tobytes()
+
+        # Create a Pygame Surface directly from PIL Image data.
+        self._surface = pygame.image.fromstring(data, size, mode)
 
     def render(self, game_clock, display):
         """
@@ -158,7 +170,7 @@ class ControlSteeringWheel(CompatibleNode):
 # ==============================================================================
 
 
-class KeyboardControl(object):
+class DualControl(object):
     """
     Handle input events
     """
@@ -171,6 +183,27 @@ class KeyboardControl(object):
         self._autopilot_enabled = False
         self._control = CarlaEgoVehicleControl()
         self._steer_cache = 0.0
+
+        # initialize steering wheel
+        pygame.joystick.init()
+
+        joystick_count = pygame.joystick.get_count()
+        if joystick_count > 1:
+            raise ValueError("Please Connect Just One Joystick")
+
+        self._joystick = pygame.joystick.Joystick(0)
+        self._joystick.init()
+
+        self._parser = ConfigParser()
+        self._parser.read('/config/wheel_config.ini')
+        self._steer_idx = int(
+            self._parser.get('G29 Racing Wheel', 'steering_wheel'))
+        self._throttle_idx = int(
+            self._parser.get('G29 Racing Wheel', 'throttle'))
+        self._brake_idx = int(self._parser.get('G29 Racing Wheel', 'brake'))
+        self._reverse_idx = int(self._parser.get('G29 Racing Wheel', 'reverse'))
+        self._handbrake_idx = int(
+            self._parser.get('G29 Racing Wheel', 'handbrake'))
 
         fast_qos = QoSProfile(depth=10)
         fast_latched_qos = QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -224,6 +257,7 @@ class KeyboardControl(object):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return True
+            
             elif event.type == pygame.KEYUP:
                 if self._is_quit_shortcut(event.key):
                     return True
@@ -253,6 +287,7 @@ class KeyboardControl(object):
                                           ('On' if self._autopilot_enabled else 'Off'))
         if not self._autopilot_enabled and self.vehicle_control_manual_override:
             self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
+            self._parse_vehicle_wheel()
             self._control.reverse = self._control.gear < 0
 
     def _on_new_carla_frame(self, data):
@@ -284,7 +319,38 @@ class KeyboardControl(object):
         self._control.steer = round(self._steer_cache, 1)
         self._control.brake = 1.0 if keys[K_DOWN] or keys[K_s] else 0.0
         self._control.hand_brake = bool(keys[K_SPACE])
+    
+    def _parse_vehicle_wheel(self):
+        num_axes = self._joystick.get_numaxes()
+        js_inputs = [float(self._joystick.get_axis(i)) for i in range(num_axes)]
+        # print (js_inputs)
+        js_buttons = [float(self._joystick.get_button(i)) for i in range(self._joystick.get_numbuttons())]
 
+        # Custom function to map range of inputs [1, -1] to outputs [0, 1] i.e 1 from inputs means nothing is pressed
+        # For the steering, it seems fine as it is
+        k1 = 1.3  # 0.55
+        steer_cmd = k1 * math.tan(1.1 * js_inputs[self._steer_idx])
+
+        k2 = 1.6  # 1.6
+        throttle_cmd = k2 + (2.05 * math.log10(
+            -0.7 * js_inputs[self._throttle_idx] + 1.4) - 1.2) / 0.92
+        if throttle_cmd <= 0:
+            throttle_cmd = 0
+        elif throttle_cmd > 1:
+            throttle_cmd = 1
+
+        brake_cmd = 1.6 + (2.05 * math.log10(
+            -0.7 * js_inputs[self._brake_idx] + 1.4) - 1.2) / 0.92
+        if brake_cmd <= 0:
+            brake_cmd = 0.0
+        elif brake_cmd > 1:
+            brake_cmd = 1.0
+
+        self._control.steer = float(steer_cmd)
+        self._control.brake = float(brake_cmd)
+        self._control.throttle = float(throttle_cmd)
+        self._control.hand_brake = bool(js_buttons[self._handbrake_idx])
+        
     @staticmethod
     def _is_quit_shortcut(key):
         return (key == K_ESCAPE) or (key == K_q and pygame.key.get_mods() & KMOD_CTRL)
@@ -615,7 +681,7 @@ def main(args=None):
     roscomp.init("control_steering_wheel", args=args)
 
     # resolution should be similar to spawned camera with role-name 'view'
-    resolution = {"width": 800, "height": 600}
+    resolution = {"width": RESOLUTION[0], "height": RESOLUTION[1]}
 
     pygame.init()
     pygame.font.init()

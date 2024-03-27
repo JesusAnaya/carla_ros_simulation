@@ -18,12 +18,11 @@ RUN pip3 install --upgrade pip
 COPY --from=bridge /opt/carla-ros-bridge/install /opt/carla-ros-bridge/install
 COPY docker/control_steering_wheel/requirements.txt /opt/control_steering_wheel/requirements.txt
 
-WORKDIR /opt/control_steering_wheel
-COPY ./src /opt/control_steering_wheel/src
-
 RUN pip3 install -r /opt/control_steering_wheel/requirements.txt
 RUN pip3 install carla==$CARLA_VERSION
 
+COPY ./src /opt/control_steering_wheel/src
+WORKDIR /opt/control_steering_wheel
 RUN /bin/bash -c 'source /opt/ros/$ROS_DISTRO/setup.bash; \
     colcon build'
 
