@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
     container_name: carla_ros_bridge
     image: carla_ros_bridge:latest
-    command: ros2 launch carla_ros_bridge carla_ros_bridge.launch.py host:=carla_server timeout:=30
+    command: ros2 launch carla_ros_bridge carla_ros_bridge.launch.py host:=carla_server timeout:=30 town:=Town03
     depends_on:
       carla_server:
         condition: service_healthy
@@ -58,6 +58,19 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - ./config:/config
     command: ros2 launch control_steering_wheel control_steering_wheel.launch.py host:=carla_server
+    depends_on:
+      carla_ros_bridge:
+        condition: service_started
+
+  ros_mcap_recording:
+    build:
+      context: ./
+      dockerfile: docker/ros_mcap_recording/Dockerfile
+    image: ros_mcap_recording:latest
+    container_name: ros_mcap_recording
+    volumes:
+      - ./recording:/home/recording
+    command: echo "ROS2 recording container"
     depends_on:
       carla_ros_bridge:
         condition: service_started

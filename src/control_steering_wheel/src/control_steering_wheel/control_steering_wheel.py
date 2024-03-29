@@ -78,7 +78,8 @@ from std_msgs.msg import Bool
 from PIL import Image as PILImage
 from configparser import ConfigParser
 
-RESOLUTION = (1280, 720)
+# Ratio display 4:3, pixels 1:1
+RESOLUTION = (960, 720)
 # ==============================================================================
 # -- World ---------------------------------------------------------------------
 # ==============================================================================
@@ -328,7 +329,7 @@ class DualControl(object):
 
         # Custom function to map range of inputs [1, -1] to outputs [0, 1] i.e 1 from inputs means nothing is pressed
         # For the steering, it seems fine as it is
-        k1 = 1.3  # 0.55
+        k1 = 1.1  # 0.55
         steer_cmd = k1 * math.tan(1.1 * js_inputs[self._steer_idx])
 
         k2 = 1.6  # 1.6

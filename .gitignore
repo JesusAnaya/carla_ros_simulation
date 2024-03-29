@@ -7,4 +7,4 @@ log
 docker/ros2_container/ros2_ws/log
 docker/ros2_container/ros2_ws/build
 docker/ros2_container/ros2_ws/install
-
+recording/
