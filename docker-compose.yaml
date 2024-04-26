@@ -3,7 +3,10 @@ version: '3.8'
 services:
   # Carla server container
   carla_server:
-    image: carlasim/carla:0.9.15
+    build:
+      context: ./docker/carla_server/
+      dockerfile: Dockerfile
+    image: carla_server:latest
     container_name: carla_server
     command: ["/bin/bash", "./CarlaUE4.sh", "-nosound", "-vulkan", "-RenderOffScreen"]
     runtime: nvidia
@@ -18,6 +21,8 @@ services:
       interval: 5s
       timeout: 10s
       retries: 5
+    networks:
+      - shared_network
 
   # Carla ROS bridge container
   carla_ros_bridge:
@@ -26,41 +31,56 @@ services:
       dockerfile: Dockerfile
     container_name: carla_ros_bridge
     image: carla_ros_bridge:latest
-    command: ros2 launch carla_ros_bridge carla_ros_bridge.launch.py host:=carla_server timeout:=30 town:=Town03
+    command: ros2 launch carla_ros_bridge carla_ros_bridge.launch.py host:=carla_server timeout:=30 town:=Town02
     depends_on:
       carla_server:
         condition: service_healthy
+    networks:
+      - shared_network
 
   bridge_spawn_objects:
     image: carla_ros_bridge:latest
     container_name: bridge_spawn_objects
-    command: ros2 launch carla_spawn_objects carla_spawn_objects.launch.py host:=carla_server objects_definition_file:=/config/objects.json
+    command: ros2 launch carla_spawn_objects carla_spawn_objects.launch.py host:=carla_server objects_definition_file:=/config/objects_tests.json
     volumes:
       - ./config:/config
     depends_on:
       carla_ros_bridge:
         condition: service_started
+    networks:
+      - shared_network
 
-  control_steering_wheel:
-    build:
-      context: ./
-      dockerfile: docker/control_steering_wheel/Dockerfile
-    image: control_steering_wheel:latest
-    container_name: control_steering_wheel
-    runtime: nvidia
-    privileged: true
-    environment:
-      - DISPLAY=${DISPLAY}
-      - SDL_VIDEODRIVER=x11
-      - SDL_AUDIODRIVER=waveout
-      - QT_X11_NO_MITSHM=1
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./config:/config
-    command: ros2 launch control_steering_wheel control_steering_wheel.launch.py host:=carla_server
-    depends_on:
-      carla_ros_bridge:
-        condition: service_started
+#  setup_scenario:
+#    build:
+#      context: ./
+#      dockerfile: docker/setup_scenario/Dockerfile
+#    image: setup_scenario:latest
+#    container_name: setup_scenario
+#    command: python3 map_start.py --host carla_server
+#    depends_on:
+#      bridge_spawn_objects:
+#        condition: service_started
+#    networks:
+#      - shared_network
+
+#  ros_bridge_manual_control:
+#    image: carla_ros_bridge:latest
+#    container_name: ros_bridge_manual_control
+#    runtime: nvidia
+#    privileged: true
+#    environment:
+#      - DISPLAY=${DISPLAY}
+#      - SDL_VIDEODRIVER=x11
+#      - SDL_AUDIODRIVER=waveout
+#      - QT_X11_NO_MITSHM=1
+#    volumes:
+#      - /tmp/.X11-unix:/tmp/.X11-unix
+#    command: ros2 launch carla_manual_control carla_manual_control.launch.py host:=carla_server
+#    depends_on:
+#      carla_ros_bridge:
+#        condition: service_started
+#    networks:
+#      - shared_network
 
   ros_mcap_recording:
     build:
@@ -74,6 +94,8 @@ services:
     depends_on:
       carla_ros_bridge:
         condition: service_started
+    networks:
+      - shared_network
 
   # foxglove to visualize live data
   foxglove_bridge:
@@ -88,3 +110,10 @@ services:
         condition: service_started
     ports:
       - 8765:8765
+    networks:
+      - shared_network
+
+networks:
+  shared_network:
+    name: tfm_ros_net
+    driver: bridge

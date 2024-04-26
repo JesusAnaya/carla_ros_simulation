@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  control_steering_wheel:
+    build:
+      context: ./
+      dockerfile: docker/control_steering_wheel/Dockerfile
+    image: control_steering_wheel:latest
+    container_name: control_steering_wheel
+    runtime: nvidia
+    privileged: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - SDL_VIDEODRIVER=x11
+      - SDL_AUDIODRIVER=waveout
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./config:/config
+    command: ros2 launch control_steering_wheel control_steering_wheel.launch.py host:=carla_server
+    networks:
+      - shared_network
+
+#  ros_bridge_manual_control:
+#    image: carla_ros_bridge:latest
+#    container_name: ros_bridge_manual_control
+#    runtime: nvidia
+#    privileged: true
+#    environment:
+#      - DISPLAY=${DISPLAY}
+#      - SDL_VIDEODRIVER=x11
+#      - SDL_AUDIODRIVER=waveout
+#      - QT_X11_NO_MITSHM=1
+#    volumes:
+#      - /tmp/.X11-unix:/tmp/.X11-unix
+#    command: ros2 launch carla_manual_control carla_manual_control.launch.py host:=carla_server
+#    networks:
+#      - shared_network
+
+networks:
+  shared_network:
+    external:
+      name: tfm_ros_net

@@ -79,7 +79,7 @@ from PIL import Image as PILImage
 from configparser import ConfigParser
 
 # Ratio display 4:3, pixels 1:1
-RESOLUTION = (960, 720)
+RESOLUTION = (800, 600)
 # ==============================================================================
 # -- World ---------------------------------------------------------------------
 # ==============================================================================
@@ -98,7 +98,7 @@ class ControlSteeringWheel(CompatibleNode):
         self.controller = DualControl(self.role_name, self.hud, self)
 
         self.image_subscriber = self.new_subscription(
-            Image, "/carla/{}/rgb_center/image".format(self.role_name),
+            Image, "/carla/{}/rgb_view/image".format(self.role_name),
             self.on_view_image, qos_profile=10)
 
         self.collision_subscriber = self.new_subscription(
